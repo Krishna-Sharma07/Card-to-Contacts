@@ -6,13 +6,16 @@ import type { RootStackParamList } from '../navigation/types';
 type Props = NativeStackScreenProps<RootStackParamList, 'Review'>;
 
 function ReviewScreen({ route }: Props) {
-  const { imageUri } = route.params;
+  const { frontUri, backUri } = route.params;
 
   // Populated by the OCR + field-parsing milestones; editable form fields
   // (name, company, title, phones, emails, website, address) land here.
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Image source={{ uri: imageUri }} style={styles.thumbnail} />
+      <Image source={{ uri: frontUri }} style={styles.thumbnail} />
+      {backUri ? (
+        <Image source={{ uri: backUri }} style={styles.thumbnail} />
+      ) : null}
       <View style={styles.placeholder}>
         <Text style={styles.placeholderText}>
           Extracted fields will appear here for review before saving to
