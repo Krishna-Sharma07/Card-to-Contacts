@@ -89,6 +89,7 @@ function HomeScreen({ navigation }: Props) {
       />
 
       <Pressable
+        testID="save-button"
         style={[styles.button, !frontUri && styles.buttonDisabled]}
         disabled={!frontUri}
         onPress={handleSave}>
@@ -111,6 +112,7 @@ function CardPanel({
   onTakePhoto,
   onChooseFromGallery,
 }: CardPanelProps) {
+  const testIdPrefix = label.toLowerCase().startsWith('front') ? 'front' : 'back';
   return (
     <View style={styles.panel}>
       <Text style={styles.panelLabel}>{label}</Text>
@@ -121,11 +123,13 @@ function CardPanel({
       )}
       <View style={styles.panelButtons}>
         <Pressable
+          testID={`${testIdPrefix}-take-photo`}
           style={[styles.smallButton, styles.secondaryButton]}
           onPress={onTakePhoto}>
           <Text style={styles.buttonText}>Take Photo</Text>
         </Pressable>
         <Pressable
+          testID={`${testIdPrefix}-choose-from-gallery`}
           style={[styles.smallButton, styles.secondaryButton]}
           onPress={onChooseFromGallery}>
           <Text style={styles.buttonText}>Choose from Gallery</Text>
