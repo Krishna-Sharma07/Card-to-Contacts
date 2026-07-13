@@ -95,6 +95,13 @@ function HomeScreen({ navigation }: Props) {
         onPress={handleSave}>
         <Text style={styles.buttonText}>Save</Text>
       </Pressable>
+
+      <Pressable
+        testID="view-history-button"
+        style={[styles.button, styles.secondaryButton]}
+        onPress={() => navigation.navigate('History')}>
+        <Text style={styles.buttonText}>View Scan History</Text>
+      </Pressable>
     </ScrollView>
   );
 }

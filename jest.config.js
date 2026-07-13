@@ -3,4 +3,8 @@ module.exports = {
   transformIgnorePatterns: [
     'node_modules/(?!(react-native|@react-native|@react-native-ml-kit|@react-navigation|react-native-.*)/)',
   ],
+  moduleNameMapper: {
+    '^@react-native-async-storage/async-storage$':
+      '@react-native-async-storage/async-storage/jest/async-storage-mock',
+  },
 };

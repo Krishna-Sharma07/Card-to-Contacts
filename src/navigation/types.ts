@@ -4,4 +4,5 @@ export type RootStackParamList = {
     frontUri: string;
     backUri?: string;
   };
+  History: undefined;
 };

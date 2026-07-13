@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import HomeScreen from '../screens/HomeScreen';
 import ReviewScreen from '../screens/ReviewScreen';
+import HistoryScreen from '../screens/HistoryScreen';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -20,6 +21,11 @@ function AppNavigator() {
           name="Review"
           component={ReviewScreen}
           options={{ title: 'Review & Edit' }}
+        />
+        <Stack.Screen
+          name="History"
+          component={HistoryScreen}
+          options={{ title: 'Scan History' }}
         />
       </Stack.Navigator>
     </NavigationContainer>

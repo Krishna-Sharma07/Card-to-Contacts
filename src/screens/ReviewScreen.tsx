@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,18 +14,10 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
 import { recognizeCardText } from '../services/ocr';
 import { parseCardFields } from '../services/parseCardFields';
+import { saveContactFromForm, type ContactForm } from '../services/saveContact';
+import { addScanHistoryEntry } from '../services/scanHistory';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Review'>;
-
-type ContactForm = {
-  name: string;
-  title: string;
-  company: string;
-  phone: string;
-  email: string;
-  website: string;
-  address: string;
-};
 
 const EMPTY_FORM: ContactForm = {
   name: '',
@@ -35,13 +29,15 @@ const EMPTY_FORM: ContactForm = {
   address: '',
 };
 
-function ReviewScreen({ route }: Props) {
+function ReviewScreen({ route, navigation }: Props) {
   const { frontUri, backUri } = route.params;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const [frontText, setFrontText] = useState<string | undefined>();
   const [backText, setBackText] = useState<string | undefined>();
   const [form, setForm] = useState<ContactForm>(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | undefined>();
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +84,21 @@ function ReviewScreen({ route }: Props) {
 
   const updateField = (field: keyof ContactForm) => (value: string) => {
     setForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveError(undefined);
+    try {
+      await saveContactFromForm(form);
+      await addScanHistoryEntry({ name: form.name, company: form.company });
+      Alert.alert('Saved', `${form.name || 'Contact'} was saved to your contacts.`);
+      navigation.navigate('Home');
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save contact.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -148,6 +159,24 @@ function ReviewScreen({ route }: Props) {
               value={form.address}
               onChangeText={updateField('address')}
             />
+
+            {saveError ? (
+              <Text testID="save-error" style={styles.errorText}>
+                {saveError}
+              </Text>
+            ) : null}
+
+            <Pressable
+              testID="save-contact-button"
+              style={[styles.button, saving && styles.buttonDisabled]}
+              disabled={saving}
+              onPress={handleSave}>
+              {saving ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.buttonText}>Save to Contacts</Text>
+              )}
+            </Pressable>
 
             <Text style={styles.sectionLabel}>Front (raw text)</Text>
             <Text style={styles.rawText}>{frontText || '(no text found)'}</Text>
@@ -233,6 +262,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     fontSize: 14,
+  },
+  button: {
+    backgroundColor: '#2F6FED',
+    paddingVertical: 14,
+    borderRadius: 8,
+    marginTop: 8,
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

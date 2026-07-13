@@ -89,4 +89,12 @@ describe('HomeScreen', () => {
 
     expect(navigation.navigate).not.toHaveBeenCalled();
   });
+
+  it('navigates to History when the view history button is pressed', async () => {
+    const { navigation } = await renderHomeScreen();
+
+    await fireEvent.press(screen.getByTestId('view-history-button'));
+
+    expect(navigation.navigate).toHaveBeenCalledWith('History');
+  });
 });
