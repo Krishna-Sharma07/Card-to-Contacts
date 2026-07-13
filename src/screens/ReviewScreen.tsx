@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,22 +12,29 @@ import {
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
+import CircleSafePhotoCapture, {
+  type CircleSafePhotoCaptureHandle,
+} from '../components/CircleSafePhotoCapture';
+import { detectDefaultCountryCode } from '../services/detectCountryCode';
 import { recognizeCardText } from '../services/ocr';
-import { parseCardFields } from '../services/parseCardFields';
+import { extractPhoneCountryCode, parseCardFields } from '../services/parseCardFields';
 import { saveContactFromForm, type ContactForm } from '../services/saveContact';
 import { addScanHistoryEntry } from '../services/scanHistory';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Review'>;
 
-const EMPTY_FORM: ContactForm = {
-  name: '',
-  title: '',
-  company: '',
-  phone: '',
-  email: '',
-  website: '',
-  address: '',
-};
+function createEmptyForm(): ContactForm {
+  return {
+    name: '',
+    title: '',
+    company: '',
+    phones: [''],
+    countryCode: detectDefaultCountryCode(),
+    email: '',
+    website: '',
+    address: '',
+  };
+}
 
 function ReviewScreen({ route, navigation }: Props) {
   const { frontUri, backUri } = route.params;
@@ -35,9 +42,10 @@ function ReviewScreen({ route, navigation }: Props) {
   const [error, setError] = useState<string | undefined>();
   const [frontText, setFrontText] = useState<string | undefined>();
   const [backText, setBackText] = useState<string | undefined>();
-  const [form, setForm] = useState<ContactForm>(EMPTY_FORM);
+  const [form, setForm] = useState<ContactForm>(createEmptyForm);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | undefined>();
+  const photoCaptureRef = useRef<CircleSafePhotoCaptureHandle>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,16 +62,24 @@ function ReviewScreen({ route, navigation }: Props) {
         setBackText(result.backText);
         const parsed = parseCardFields(
           [result.frontText, result.backText].filter(Boolean).join('\n'),
+          [...(result.frontLines ?? []), ...(result.backLines ?? [])],
         );
-        setForm({
+        // Prefer a country code the card actually printed over the device's
+        // own region guess -- otherwise the field looks wrong/misleading
+        // whenever it disagrees with what's right there on the card.
+        const cardCountryCode = parsed.phones
+          .map(extractPhoneCountryCode)
+          .find((code): code is string => Boolean(code));
+        setForm(prev => ({
           name: parsed.name ?? '',
           title: parsed.title ?? '',
           company: parsed.company ?? '',
-          phone: parsed.phone ?? '',
+          phones: parsed.phones.length > 0 ? parsed.phones : [''],
+          countryCode: cardCountryCode ?? prev.countryCode,
           email: parsed.email ?? '',
           website: parsed.website ?? '',
           address: parsed.address ?? '',
-        });
+        }));
       })
       .catch(err => {
         if (cancelled) {
@@ -82,15 +98,45 @@ function ReviewScreen({ route, navigation }: Props) {
     };
   }, [frontUri, backUri]);
 
-  const updateField = (field: keyof ContactForm) => (value: string) => {
-    setForm(prev => ({ ...prev, [field]: value }));
+  const updateField =
+    (field: Exclude<keyof ContactForm, 'phones'>) => (value: string) => {
+      setForm(prev => ({ ...prev, [field]: value }));
+    };
+
+  const updatePhone = (index: number, value: string) => {
+    setForm(prev => ({
+      ...prev,
+      phones: prev.phones.map((phone, i) => (i === index ? value : phone)),
+    }));
+  };
+
+  const addPhone = () => {
+    setForm(prev => ({ ...prev, phones: [...prev.phones, ''] }));
+  };
+
+  const removePhone = (index: number) => {
+    setForm(prev => ({ ...prev, phones: prev.phones.filter((_, i) => i !== index) }));
   };
 
   const handleSave = async () => {
     setSaving(true);
     setSaveError(undefined);
     try {
-      await saveContactFromForm(form);
+      // Contact photos are shown as circular avatars everywhere in Android,
+      // which would otherwise crop a landscape card straight through its
+      // text. Pad it onto a white square sized so the whole card stays
+      // inside that circle, falling back to the raw photo if padding fails.
+      let photoUri = frontUri;
+      try {
+        const paddedUri = await photoCaptureRef.current?.capture();
+        if (paddedUri) {
+          photoUri = paddedUri;
+        }
+      } catch {
+        photoUri = frontUri;
+      }
+
+      await saveContactFromForm(form, photoUri);
       await addScanHistoryEntry({ name: form.name, company: form.company });
       Alert.alert('Saved', `${form.name || 'Contact'} was saved to your contacts.`);
       navigation.navigate('Home');
@@ -103,6 +149,7 @@ function ReviewScreen({ route, navigation }: Props) {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <CircleSafePhotoCapture ref={photoCaptureRef} uri={frontUri} />
       <Image source={{ uri: frontUri }} style={styles.thumbnail} />
       {backUri ? (
         <Image source={{ uri: backUri }} style={styles.thumbnail} />
@@ -134,12 +181,40 @@ function ReviewScreen({ route, navigation }: Props) {
               onChangeText={updateField('company')}
             />
             <FormField
-              testID="phone-input"
-              label="Phone"
-              value={form.phone}
-              onChangeText={updateField('phone')}
+              testID="country-code-input"
+              label="Country Code"
+              value={form.countryCode}
+              onChangeText={updateField('countryCode')}
               keyboardType="phone-pad"
             />
+            {form.phones.map((phone, index) => (
+              <View key={index} style={styles.phoneRow}>
+                <View style={styles.phoneInputWrapper}>
+                  <FormField
+                    testID={`phone-input-${index}`}
+                    label={index === 0 ? 'Phone' : `Phone ${index + 1}`}
+                    value={phone}
+                    onChangeText={value => updatePhone(index, value)}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+                {form.phones.length > 1 ? (
+                  <Pressable
+                    testID={`remove-phone-${index}`}
+                    style={styles.removePhoneButton}
+                    onPress={() => removePhone(index)}>
+                    <Text style={styles.removePhoneText}>Remove</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ))}
+            <Pressable
+              testID="add-phone-button"
+              style={styles.addPhoneButton}
+              onPress={addPhone}>
+              <Text style={styles.addPhoneText}>+ Add another phone number</Text>
+            </Pressable>
+
             <FormField
               testID="email-input"
               label="Email"
@@ -248,6 +323,32 @@ const styles = StyleSheet.create({
   },
   field: {
     marginBottom: 12,
+  },
+  phoneRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  phoneInputWrapper: {
+    flex: 1,
+  },
+  removePhoneButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  removePhoneText: {
+    color: '#C0392B',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  addPhoneButton: {
+    marginBottom: 12,
+  },
+  addPhoneText: {
+    color: '#2F6FED',
+    fontSize: 13,
+    fontWeight: '600',
   },
   fieldLabel: {
     fontSize: 13,

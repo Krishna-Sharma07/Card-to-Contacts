@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import {
   Alert,
   Image,
+  PermissionsAndroid,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -43,7 +44,14 @@ function HomeScreen({ navigation }: Props) {
   );
 
   const handleTakePhoto = useCallback(
-    (side: Side) => {
+    async (side: Side) => {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+      );
+      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+        Alert.alert('Camera permission needed', 'Enable camera access to take a photo.');
+        return;
+      }
       launchCamera({ mediaType: 'photo', saveToPhotos: false }, response =>
         handleResponse(side, response),
       );

@@ -20,7 +20,12 @@ describe('recognizeCardText', () => {
 
     const result = await recognizeCardText('front.jpg');
 
-    expect(result).toEqual({ frontText: 'Front Text', backText: undefined });
+    expect(result).toEqual({
+      frontText: 'Front Text',
+      backText: undefined,
+      frontLines: [],
+      backLines: [],
+    });
     expect(mockRecognize).toHaveBeenCalledTimes(1);
     expect(mockRecognize).toHaveBeenCalledWith('front.jpg');
   });
@@ -32,10 +37,54 @@ describe('recognizeCardText', () => {
 
     const result = await recognizeCardText('front.jpg', 'back.jpg');
 
-    expect(result).toEqual({ frontText: 'Front Text', backText: 'Back Text' });
+    expect(result).toEqual({
+      frontText: 'Front Text',
+      backText: 'Back Text',
+      frontLines: [],
+      backLines: [],
+    });
     expect(mockRecognize).toHaveBeenCalledTimes(2);
     expect(mockRecognize).toHaveBeenCalledWith('front.jpg');
     expect(mockRecognize).toHaveBeenCalledWith('back.jpg');
+  });
+
+  it('flattens each block into lines paired with their printed height', async () => {
+    mockRecognize.mockResolvedValueOnce({
+      text: 'J-NX\nRishabh Overseas',
+      blocks: [
+        {
+          text: 'J-NX',
+          lines: [{ text: 'J-NX', frame: { top: 0, left: 0, width: 60, height: 18 } }],
+        },
+        {
+          text: 'Rishabh Overseas',
+          lines: [
+            {
+              text: 'Rishabh Overseas',
+              frame: { top: 100, left: 0, width: 300, height: 40 },
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await recognizeCardText('front.jpg');
+
+    expect(result.frontLines).toEqual([
+      { text: 'J-NX', height: 18 },
+      { text: 'Rishabh Overseas', height: 40 },
+    ]);
+  });
+
+  it('defaults a missing frame height to 0 rather than throwing', async () => {
+    mockRecognize.mockResolvedValueOnce({
+      text: 'Some text',
+      blocks: [{ text: 'Some text', lines: [{ text: 'Some text' }] }],
+    });
+
+    const result = await recognizeCardText('front.jpg');
+
+    expect(result.frontLines).toEqual([{ text: 'Some text', height: 0 }]);
   });
 
   it('propagates errors from the recognizer', async () => {

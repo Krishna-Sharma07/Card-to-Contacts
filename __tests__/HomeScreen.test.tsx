@@ -1,4 +1,5 @@
 import React from 'react';
+import { PermissionsAndroid } from 'react-native';
 import { render, screen, fireEvent } from '@testing-library/react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import type { ImagePickerResponse } from 'react-native-image-picker';
@@ -23,6 +24,9 @@ describe('HomeScreen', () => {
   beforeEach(() => {
     mockLaunchCamera.mockReset();
     mockLaunchImageLibrary.mockReset();
+    jest
+      .spyOn(PermissionsAndroid, 'request')
+      .mockResolvedValue(PermissionsAndroid.RESULTS.GRANTED);
   });
 
   it('does not navigate to Review until a front photo is captured', async () => {

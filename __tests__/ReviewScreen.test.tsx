@@ -18,6 +18,23 @@ jest.mock('../src/services/scanHistory', () => ({
   addScanHistoryEntry: jest.fn(),
 }));
 
+const mockCapture = jest.fn();
+jest.mock('../src/components/CircleSafePhotoCapture', () => {
+  const { forwardRef, useImperativeHandle } = require('react');
+  return {
+    __esModule: true,
+    default: forwardRef((_props: unknown, ref: unknown) => {
+      useImperativeHandle(ref, () => ({ capture: mockCapture }));
+      return null;
+    }),
+  };
+});
+
+const mockDetectDefaultCountryCode = jest.fn();
+jest.mock('../src/services/detectCountryCode', () => ({
+  detectDefaultCountryCode: () => mockDetectDefaultCountryCode(),
+}));
+
 const mockRecognizeCardText = recognizeCardText as jest.Mock;
 const mockSaveContactFromForm = saveContactFromForm as jest.Mock;
 const mockAddScanHistoryEntry = addScanHistoryEntry as jest.Mock;
@@ -38,6 +55,10 @@ describe('ReviewScreen', () => {
     mockRecognizeCardText.mockReset();
     mockSaveContactFromForm.mockReset();
     mockAddScanHistoryEntry.mockReset();
+    mockCapture.mockReset();
+    mockCapture.mockResolvedValue('file:///padded-photo.jpg');
+    mockDetectDefaultCountryCode.mockReset();
+    mockDetectDefaultCountryCode.mockReturnValue('');
     jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   });
 
@@ -103,9 +124,115 @@ describe('ReviewScreen', () => {
     });
     expect(screen.getByTestId('title-input').props.value).toBe('Senior Sales Manager');
     expect(screen.getByTestId('company-input').props.value).toBe('Acme Solutions Inc.');
-    expect(screen.getByTestId('phone-input').props.value).toBe('+1 (555) 123-4567');
+    expect(screen.getByTestId('phone-input-0').props.value).toBe('+1 (555) 123-4567');
     expect(screen.getByTestId('email-input').props.value).toBe('jane.doe@acme.com');
     expect(screen.getByTestId('website-input').props.value).toBe('www.acme.com');
+  });
+
+  it('lists every phone number found on the card and lets the user add or remove one', async () => {
+    mockRecognizeCardText.mockResolvedValueOnce({
+      frontText: ['Jane Doe', '555-111-2222', '555-333-4444'].join('\n'),
+      backText: undefined,
+    });
+
+    await renderReviewScreen();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phone-input-0').props.value).toBe('555-111-2222');
+    });
+    expect(screen.getByTestId('phone-input-1').props.value).toBe('555-333-4444');
+
+    await fireEvent.press(screen.getByTestId('add-phone-button'));
+    expect(screen.getByTestId('phone-input-2').props.value).toBe('');
+
+    await fireEvent.press(screen.getByTestId('remove-phone-1'));
+    expect(screen.queryByTestId('phone-input-2')).toBeNull();
+    expect(screen.getByTestId('phone-input-1').props.value).toBe('');
+  });
+
+  it('pre-fills the country code field from the device region, editable by the user', async () => {
+    mockDetectDefaultCountryCode.mockReturnValue('+91');
+    mockRecognizeCardText.mockResolvedValueOnce({
+      frontText: 'Jane Doe',
+      backText: undefined,
+    });
+
+    await renderReviewScreen();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('country-code-input').props.value).toBe('+91');
+    });
+
+    await fireEvent.changeText(screen.getByTestId('country-code-input'), '+44');
+    expect(screen.getByTestId('country-code-input').props.value).toBe('+44');
+  });
+
+  it('prefers a country code already printed on the card over the device default', async () => {
+    mockDetectDefaultCountryCode.mockReturnValue('+1');
+    mockRecognizeCardText.mockResolvedValueOnce({
+      frontText: ['Rishabh Overseas', '+91 7977636041', '+91 9321249424'].join('\n'),
+      backText: undefined,
+    });
+
+    await renderReviewScreen();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('country-code-input').props.value).toBe('+91');
+    });
+  });
+
+  it('correctly reads the printed code even when OCR drops the space after it', async () => {
+    mockDetectDefaultCountryCode.mockReturnValue('+1');
+    mockRecognizeCardText.mockResolvedValueOnce({
+      frontText: ['Rishabh Overseas', '+917977636041', '+919321249424'].join('\n'),
+      backText: undefined,
+    });
+
+    await renderReviewScreen();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('country-code-input').props.value).toBe('+91');
+    });
+  });
+
+  it('keeps the device-default country code when the card has none of its own', async () => {
+    mockDetectDefaultCountryCode.mockReturnValue('+1');
+    mockRecognizeCardText.mockResolvedValueOnce({
+      frontText: ['Jane Doe', '9876543210'].join('\n'),
+      backText: undefined,
+    });
+
+    await renderReviewScreen();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phone-input-0').props.value).toBe('9876543210');
+    });
+    expect(screen.getByTestId('country-code-input').props.value).toBe('+1');
+  });
+
+  it('passes the country code field along when saving', async () => {
+    mockDetectDefaultCountryCode.mockReturnValue('+91');
+    mockRecognizeCardText.mockResolvedValueOnce({
+      frontText: 'Jane Doe',
+      backText: undefined,
+    });
+    mockSaveContactFromForm.mockResolvedValueOnce({ recordID: '1' });
+    mockAddScanHistoryEntry.mockResolvedValueOnce([]);
+
+    await renderReviewScreen();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('country-code-input').props.value).toBe('+91');
+    });
+
+    await fireEvent.press(screen.getByTestId('save-contact-button'));
+
+    await waitFor(() => {
+      expect(mockSaveContactFromForm).toHaveBeenCalledWith(
+        expect.objectContaining({ countryCode: '+91' }),
+        expect.any(String),
+      );
+    });
   });
 
   it('lets the user edit a parsed field', async () => {
@@ -146,10 +273,36 @@ describe('ReviewScreen', () => {
     });
     expect(mockSaveContactFromForm).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Jane Doe', company: 'Acme Inc.' }),
+      'file:///padded-photo.jpg',
     );
     expect(mockAddScanHistoryEntry).toHaveBeenCalledWith({
       name: 'Jane Doe',
       company: 'Acme Inc.',
+    });
+  });
+
+  it('falls back to the raw photo when padding the card onto a square canvas fails', async () => {
+    mockRecognizeCardText.mockResolvedValueOnce({
+      frontText: 'Jane Doe',
+      backText: undefined,
+    });
+    mockCapture.mockRejectedValueOnce(new Error('capture failed'));
+    mockSaveContactFromForm.mockResolvedValueOnce({ recordID: '1' });
+    mockAddScanHistoryEntry.mockResolvedValueOnce([]);
+
+    await renderReviewScreen();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('name-input').props.value).toBe('Jane Doe');
+    });
+
+    await fireEvent.press(screen.getByTestId('save-contact-button'));
+
+    await waitFor(() => {
+      expect(mockSaveContactFromForm).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Jane Doe' }),
+        'file://front.jpg',
+      );
     });
   });
 
