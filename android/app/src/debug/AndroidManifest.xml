@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Only debug builds talk to the Metro bundler over a local socket, so
+         only they need INTERNET -- the release build embeds its JS bundle
+         and makes no network calls at all, matching this app's local-only
+         design. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+</manifest>
