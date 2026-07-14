@@ -69,7 +69,7 @@ describe('ReviewScreen', () => {
     mockCapture.mockReset();
     mockCapture.mockResolvedValue('file:///padded-photo.jpg');
     mockDetectDefaultCountryCode.mockReset();
-    mockDetectDefaultCountryCode.mockReturnValue('');
+    mockDetectDefaultCountryCode.mockResolvedValue('');
     jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   });
 
@@ -162,7 +162,7 @@ describe('ReviewScreen', () => {
   });
 
   it('pre-fills the country code field from the device region, editable by the user', async () => {
-    mockDetectDefaultCountryCode.mockReturnValue('+91');
+    mockDetectDefaultCountryCode.mockResolvedValue('+91');
     mockRecognizeCardText.mockResolvedValueOnce({
       frontText: 'Jane Doe',
       backText: undefined,
@@ -179,7 +179,7 @@ describe('ReviewScreen', () => {
   });
 
   it('prefers a country code already printed on the card over the device default', async () => {
-    mockDetectDefaultCountryCode.mockReturnValue('+1');
+    mockDetectDefaultCountryCode.mockResolvedValue('+1');
     mockRecognizeCardText.mockResolvedValueOnce({
       frontText: ['Rishabh Overseas', '+91 7977636041', '+91 9321249424'].join('\n'),
       backText: undefined,
@@ -193,7 +193,7 @@ describe('ReviewScreen', () => {
   });
 
   it('correctly reads the printed code even when OCR drops the space after it', async () => {
-    mockDetectDefaultCountryCode.mockReturnValue('+1');
+    mockDetectDefaultCountryCode.mockResolvedValue('+1');
     mockRecognizeCardText.mockResolvedValueOnce({
       frontText: ['Rishabh Overseas', '+917977636041', '+919321249424'].join('\n'),
       backText: undefined,
@@ -207,7 +207,7 @@ describe('ReviewScreen', () => {
   });
 
   it('keeps the device-default country code when the card has none of its own', async () => {
-    mockDetectDefaultCountryCode.mockReturnValue('+1');
+    mockDetectDefaultCountryCode.mockResolvedValue('+1');
     mockRecognizeCardText.mockResolvedValueOnce({
       frontText: ['Jane Doe', '9876543210'].join('\n'),
       backText: undefined,
@@ -222,7 +222,7 @@ describe('ReviewScreen', () => {
   });
 
   it('passes the country code field along when saving', async () => {
-    mockDetectDefaultCountryCode.mockReturnValue('+91');
+    mockDetectDefaultCountryCode.mockResolvedValue('+91');
     mockRecognizeCardText.mockResolvedValueOnce({
       frontText: 'Jane Doe',
       backText: undefined,

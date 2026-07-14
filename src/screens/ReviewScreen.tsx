@@ -38,7 +38,7 @@ function createEmptyForm(): ContactForm {
     title: '',
     company: '',
     phones: [''],
-    countryCode: detectDefaultCountryCode(),
+    countryCode: '',
     email: '',
     website: '',
     address: '',
@@ -55,6 +55,23 @@ function ReviewScreen({ route, navigation }: Props) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | undefined>();
   const photoCaptureRef = useRef<CircleSafePhotoCaptureHandle>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    detectDefaultCountryCode().then(code => {
+      // Only seed the SIM/locale-based guess if nothing's claimed the field
+      // yet -- a code already printed on the card (set by the OCR effect
+      // below) or a manual edit should never be clobbered by this default.
+      if (!cancelled) {
+        setForm(prev => (prev.countryCode ? prev : { ...prev, countryCode: code }));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
