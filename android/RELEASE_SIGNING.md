@@ -37,8 +37,11 @@ Open PowerShell, `cd` into this project's `android` folder, then run:
 
 ```powershell
 cd "D:\web projects\Card to Contacts\android"
-keytool -genkeypair -v -storetype PKCS12 -keystore release.jks -alias card-to-contacts -keyalg RSA -keysize 2048 -validity 10000
+& "C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe" -genkeypair -v -storetype PKCS12 -keystore release.jks -alias card-to-contacts -keyalg RSA -keysize 2048 -validity 10000
 ```
+
+If plain `keytool` worked for you, that's fine too -- use whichever you have.
+If Android Studio is installed elsewhere, adjust the path.
 
 `keytool` will ask you for, in this order:
 1. A **keystore password** (used twice, to confirm) -- this becomes `storePassword`.
@@ -58,6 +61,7 @@ required certificate validity (October 2033). This creates
 check your `.gitignore` before committing anything.
 
 ## 2. Wire it up locally
+
 
 ```powershell
 Copy-Item "android\keystore.properties.example" "android\keystore.properties"
