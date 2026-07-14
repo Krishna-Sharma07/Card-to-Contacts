@@ -15,16 +15,21 @@ that only you should be typing.
 This machine's default `java` is JDK 24, which is too new for the Android
 Gradle Plugin's native build step (`bundleRelease`/`assembleRelease` fail
 with a CMake/prefab error on it). Android Studio ships a working JDK 21 you
-can point Gradle at instead, without changing your system-wide Java. Every
-Gradle command below needs the same flag:
+can point Gradle at instead, without changing your system-wide Java.
+
+This is **not a command you run by itself** -- it's an extra argument you
+tack onto the end of every `.\gradlew.bat ...` command in this guide, like
+so:
 
 ```powershell
--Dorg.gradle.java.home="C:\Program Files\Android\Android Studio\jbr"
+.\gradlew.bat bundleRelease "-Dorg.gradle.java.home=C:\Program Files\Android\Android Studio\jbr"
 ```
 
-If Android Studio is installed somewhere else on your machine, adjust that
-path. `keytool` itself (step 1) isn't affected by this issue and can use
-whatever `java` you already have.
+Every full `gradlew` command further down already has this included --
+just make sure you don't drop it if you retype one. If Android Studio is
+installed somewhere else on your machine, adjust that path. `keytool`
+itself (step 1) isn't affected by this issue and can use whatever `java`
+you already have.
 
 ## 1. Generate the keystore
 
