@@ -55,6 +55,37 @@ describe('parseCardFields', () => {
     expect(result.address).toContain('123 Main Street');
   });
 
+  it('folds a city/state/zip continuation line into the address instead of dropping it', () => {
+    const text = ['John Smith', '123 Main Street', 'Springfield, IL 62701'].join('\n');
+
+    const result = parseCardFields(text);
+
+    expect(result.address).toBe('123 Main Street, Springfield, IL 62701');
+  });
+
+  it('does not drop the last digit of a space-separated phone number (e.g. Indian mobile format)', () => {
+    const text = ['Jane Doe', '98765 43210'].join('\n');
+
+    const result = parseCardFields(text);
+
+    expect(result.phones).toEqual(['98765 43210']);
+  });
+
+  it('recognizes an Indian-style address that leads with a plot/building number instead of a bare digit', () => {
+    // Real OCR output from a scanned card: neither line has a street
+    // keyword, and "M-18," starts with a letter, not a digit, so it was
+    // silently dropped instead of being recognized as an address.
+    const text = [
+      'ANAND ELECTRICALS (INDIA)',
+      'M-18, Mahalaxmi Market, Bhagirath Palace,',
+      'Delhi-110006',
+    ].join('\n');
+
+    const result = parseCardFields(text);
+
+    expect(result.address).toBe('M-18, Mahalaxmi Market, Bhagirath Palace, Delhi-110006');
+  });
+
   it('does not confuse a phone number with a website or email', () => {
     const text = ['Acme Inc.', '555-123-4567'].join('\n');
 

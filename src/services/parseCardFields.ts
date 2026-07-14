@@ -50,8 +50,11 @@ const BROKEN_EMAIL_SPAN_REGEX = /\S*@\S*(?:[ \t]+\S*\.[a-zA-Z]{2,})?/g;
 const WEBSITE_REGEX =
   /\b(?:https?:\/\/)?(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}(?:\/[^\s]*)?\b/g;
 
+// Group sizes are 2-5 (not the tighter 3-4) so a "98765 43210" split -- the
+// common way Indian mobile numbers are printed -- doesn't force the regex
+// into a bad backtrack that strands the final digit outside the match.
 const PHONE_REGEX =
-  /(?:\+\d{1,3}[ .-]?)?\(?\d{2,4}\)?[ .-]?\d{3,4}[ .-]?\d{3,4}(?:[ .-]?\d{2,4})?/g;
+  /(?:\+\d{1,3}[ .-]?)?\(?\d{2,5}\)?(?:[ .-]?\d{2,5}){1,4}/g;
 
 const COMPANY_KEYWORDS =
   /\b(inc|llc|ltd|corp|co|company|group|solutions|enterprises|technologies|technology|industries|partners|associates|consulting)\b\.?/i;
@@ -61,6 +64,11 @@ const TITLE_KEYWORDS =
 
 const ADDRESS_KEYWORDS =
   /\b(street|st\.?|avenue|ave\.?|road|rd\.?|boulevard|blvd\.?|drive|dr\.?|suite|ste\.?|floor|fl\.?|lane|ln\.?|way|plaza|building|bldg\.?)\b/i;
+
+// Indian addresses commonly lead with an alphanumeric plot/building number
+// ("M-18, Mahalaxmi Market") instead of a bare digit, which the plain
+// leading-digit check below doesn't recognize as an address at all.
+const ADDRESS_PLOT_NUMBER_REGEX = /^[A-Za-z]{0,3}-\d/;
 
 function digitCount(value: string): number {
   return (value.match(/\d/g) || []).length;
@@ -206,7 +214,8 @@ export function parseCardFields(rawText: string, ocrLines: OcrLine[] = []): Pars
   const addressLines: string[] = [];
   const nameCandidates: string[] = [];
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (!company && COMPANY_KEYWORDS.test(line)) {
       company = line;
       continue;
@@ -215,8 +224,21 @@ export function parseCardFields(rawText: string, ocrLines: OcrLine[] = []): Pars
       title = line;
       continue;
     }
-    if (ADDRESS_KEYWORDS.test(line) || /^\d+\s+\S/.test(line)) {
+    if (
+      ADDRESS_KEYWORDS.test(line) ||
+      /^\d+\s+\S/.test(line) ||
+      ADDRESS_PLOT_NUMBER_REGEX.test(line)
+    ) {
       addressLines.push(line);
+      // A street line is frequently followed by a "City, State ZIP"-style
+      // continuation with no street keyword and no leading digit of its
+      // own, e.g. "Springfield, IL 62701". If the next line doesn't look
+      // like a name, company, or title, fold it in rather than dropping it.
+      const next = lines[i + 1];
+      if (next && !COMPANY_KEYWORDS.test(next) && !TITLE_KEYWORDS.test(next) && !isNameLike(next)) {
+        addressLines.push(next);
+        i += 1;
+      }
       continue;
     }
     if (isNameLike(line)) {
@@ -235,6 +257,9 @@ export function parseCardFields(rawText: string, ocrLines: OcrLine[] = []): Pars
     phones,
     email: emails[0],
     website: websites[0],
-    address: addressLines.length > 0 ? addressLines.join(', ') : undefined,
+    address:
+      addressLines.length > 0
+        ? addressLines.map(line => line.replace(/,\s*$/, '')).join(', ')
+        : undefined,
   };
 }
