@@ -47,14 +47,22 @@ const LOOSE_EMAIL_TOKEN_REGEX = /\S*@\S*/g;
 // from the text before website detection runs.
 const BROKEN_EMAIL_SPAN_REGEX = /\S*@\S*(?:[ \t]+\S*\.[a-zA-Z]{2,})?/g;
 
+// Restricted to a common-TLD list rather than "any 2+ letter word after a
+// dot" -- otherwise an abbreviation-plus-word fragment like "Opp. R. B.Lane"
+// (an address locator, OCR'd without its intended space) reads as a
+// perfectly-shaped domain and gets misextracted as a website.
 const WEBSITE_REGEX =
-  /\b(?:https?:\/\/)?(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}(?:\/[^\s]*)?\b/g;
+  /\b(?:https?:\/\/)?(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.(?:com|net|org|co|in|io|info|biz|gov|edu|ai|me|us|uk|ca|de|shop|store|online|xyz)(?:\/[^\s]*)?\b/gi;
 
 // Group sizes are 2-5 (not the tighter 3-4) so a "98765 43210" split -- the
 // common way Indian mobile numbers are printed -- doesn't force the regex
-// into a bad backtrack that strands the final digit outside the match.
+// into a bad backtrack that strands the final digit outside the match. The
+// separator classes allow repeats (not just one character) so a run like
+// "011- 42184334" (dash immediately followed by a space) doesn't strand the
+// leading digits outside the match -- a single "-" or " " alone can't
+// consume both.
 const PHONE_REGEX =
-  /(?:\+\d{1,3}[ .-]?)?\(?\d{2,5}\)?(?:[ .-]?\d{2,5}){1,4}/g;
+  /(?:\+\d{1,3}[ .-]*)?\(?\d{2,5}\)?(?:[ .-]*\d{2,5}){1,4}/g;
 
 const COMPANY_KEYWORDS =
   /\b(inc|llc|ltd|corp|co|company|group|solutions|enterprises|technologies|technology|industries|partners|associates|consulting)\b\.?/i;
@@ -62,13 +70,30 @@ const COMPANY_KEYWORDS =
 const TITLE_KEYWORDS =
   /\b(manager|director|engineer|ceo|cto|cfo|coo|president|founder|owner|executive|officer|sales|marketing|consultant|representative|specialist|analyst|designer|developer|architect|coordinator|supervisor|vice president|vp)\b/i;
 
+// The short 2-4 letter abbreviations require a trailing period. Without it,
+// a garbled OCR fragment as short as "sT" (real example: noise between two
+// unrelated words) case-insensitively matches the "st" abbreviation for
+// "Street" and misclassifies an unrelated line as an address. A full word
+// like "street" is long enough to not need that same guard.
 const ADDRESS_KEYWORDS =
-  /\b(street|st\.?|avenue|ave\.?|road|rd\.?|boulevard|blvd\.?|drive|dr\.?|suite|ste\.?|floor|fl\.?|lane|ln\.?|way|plaza|building|bldg\.?)\b/i;
+  /\b(street|avenue|road|boulevard|drive|suite|floor|lane|way|plaza|building|st\.|rd\.|ave\.|blvd\.|dr\.|ste\.|fl\.|ln\.|bldg\.)\b/i;
 
 // Indian addresses commonly lead with an alphanumeric plot/building number
 // ("M-18, Mahalaxmi Market") instead of a bare digit, which the plain
 // leading-digit check below doesn't recognize as an address at all.
 const ADDRESS_PLOT_NUMBER_REGEX = /^[A-Za-z]{0,3}-\d/;
+
+// A locality line often carries only a PIN/ZIP code with no street keyword
+// and no leading digit of its own (e.g. "Sadar Bazar, Delhi-110006", or
+// "Jorhat - 785001" with spaces around the dash). Requiring the dash keeps
+// this from matching an unrelated 6-digit number elsewhere on the card (an
+// extension number, a GST/registration number, etc.).
+const POSTAL_CODE_NEAR_DASH_REGEX = /-\s*\d{6}\b/;
+
+// Printed registration/tax IDs (GSTIN, PAN, CIN...) are commonly the line
+// right after a street address, but they are never part of the mailing
+// address itself -- don't let the continuation fold below sweep one in.
+const REGISTRATION_ID_KEYWORDS = /\b(gstin|gst|pan|cin|tin)\b/i;
 
 function digitCount(value: string): number {
   return (value.match(/\d/g) || []).length;
@@ -96,8 +121,14 @@ function stripParentheticals(line: string): string {
     .trim();
 }
 
+// A bare "&" is a connector, not a word of its own ("SHYAM ELECTRIC &
+// MACHINERY") -- without ignoring it, the per-word shape check below
+// disqualifies the whole line just because "&" doesn't start with a letter.
 function candidateWords(line: string): string[] {
-  return stripParentheticals(line).split(/\s+/).filter(Boolean);
+  return stripParentheticals(line)
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter(word => word !== '&');
 }
 
 function isNameLike(line: string): boolean {
@@ -227,15 +258,23 @@ export function parseCardFields(rawText: string, ocrLines: OcrLine[] = []): Pars
     if (
       ADDRESS_KEYWORDS.test(line) ||
       /^\d+\s+\S/.test(line) ||
-      ADDRESS_PLOT_NUMBER_REGEX.test(line)
+      ADDRESS_PLOT_NUMBER_REGEX.test(line) ||
+      POSTAL_CODE_NEAR_DASH_REGEX.test(line)
     ) {
       addressLines.push(line);
       // A street line is frequently followed by a "City, State ZIP"-style
       // continuation with no street keyword and no leading digit of its
       // own, e.g. "Springfield, IL 62701". If the next line doesn't look
-      // like a name, company, or title, fold it in rather than dropping it.
+      // like a name, company, title, or a registration/tax ID, fold it in
+      // rather than dropping it.
       const next = lines[i + 1];
-      if (next && !COMPANY_KEYWORDS.test(next) && !TITLE_KEYWORDS.test(next) && !isNameLike(next)) {
+      if (
+        next &&
+        !COMPANY_KEYWORDS.test(next) &&
+        !TITLE_KEYWORDS.test(next) &&
+        !isNameLike(next) &&
+        !REGISTRATION_ID_KEYWORDS.test(next)
+      ) {
         addressLines.push(next);
         i += 1;
       }

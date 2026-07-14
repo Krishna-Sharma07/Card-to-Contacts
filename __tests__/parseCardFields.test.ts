@@ -71,6 +71,68 @@ describe('parseCardFields', () => {
     expect(result.phones).toEqual(['98765 43210']);
   });
 
+  it('does not strand digits before a dash-then-space separator (e.g. "011- 42184334")', () => {
+    // Real OCR output from a scanned card: a hyphen immediately followed by
+    // a space between the STD code and the local number. A single optional
+    // separator character can't consume both, stranding "011-" outside the
+    // match and keeping only the back half of the number.
+    const text = ['Anand Electricals', '011- 42184334'].join('\n');
+
+    const result = parseCardFields(text);
+
+    expect(result.phones).toEqual(['011- 42184334']);
+  });
+
+  it('does not misread a short garbled OCR fragment as a street-abbreviation keyword', () => {
+    // Real OCR output: an unrelated fragment "sT" case-insensitively matches
+    // the "st" abbreviation for "Street" when no trailing period is
+    // required, misclassifying an unrelated line as an address.
+    const text = ['Rakesh Kr. Jain !! sT HTTIT t: !!'].join('\n');
+
+    const result = parseCardFields(text);
+
+    expect(result.address).toBeUndefined();
+  });
+
+  it('does not treat a short abbreviation-plus-word fragment as a website', () => {
+    // Real OCR output: "Opp. R. B.Lane" (an address locator, missing its
+    // intended space) has the exact shape of a domain with a TLD, but
+    // "Lane" isn't a real TLD.
+    const text = ['Near Marwari Thakurbari', 'Opp. R. B.Lane'].join('\n');
+
+    const result = parseCardFields(text);
+
+    expect(result.website).toBeUndefined();
+  });
+
+  it('does not fold a GSTIN/tax-ID line into the address as a continuation', () => {
+    const text = ['GANPATI TRADERS', 'AT Road,Sivasagar,', 'GSTIN : 18ADFPM0514R1Z9'].join('\n');
+
+    const result = parseCardFields(text);
+
+    expect(result.address).toBe('AT Road,Sivasagar');
+  });
+
+  it('recognizes a locality line with only a PIN code and no keyword or leading digit', () => {
+    const text = ['KT Enterprises', 'Sadar Bazar, Delhi-110006'].join('\n');
+
+    const result = parseCardFields(text);
+
+    expect(result.address).toBe('Sadar Bazar, Delhi-110006');
+  });
+
+  it('does not let a bare "&" disqualify an otherwise name-shaped company line', () => {
+    const text = ['SHYAM ELECTRIC & MACHINERY', 'ALL KINDS OF ELECTRICAL'].join('\n');
+    const ocrLines = [
+      { text: 'SHYAM ELECTRIC & MACHINERY', height: 30 },
+      { text: 'ALL KINDS OF ELECTRICAL', height: 14 },
+    ];
+
+    const result = parseCardFields(text, ocrLines);
+
+    expect(result.name).toBe('SHYAM ELECTRIC & MACHINERY');
+  });
+
   it('recognizes an Indian-style address that leads with a plot/building number instead of a bare digit', () => {
     // Real OCR output from a scanned card: neither line has a street
     // keyword, and "M-18," starts with a letter, not a digit, so it was
