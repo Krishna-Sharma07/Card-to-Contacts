@@ -3,6 +3,7 @@ import {
   Alert,
   Image,
   PermissionsAndroid,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -70,6 +71,11 @@ function HomeScreen({ navigation }: Props) {
     [handleResponse],
   );
 
+  const handleRemovePhoto = useCallback((side: Side) => {
+    const setUri = side === 'front' ? setFrontUri : setBackUri;
+    setUri(undefined);
+  }, []);
+
   const handleSave = useCallback(() => {
     if (!frontUri) {
       return;
@@ -95,6 +101,7 @@ function HomeScreen({ navigation }: Props) {
           imageUri={frontUri}
           onTakePhoto={() => handleTakePhoto('front')}
           onChooseFromGallery={() => handleChooseFromGallery('front')}
+          onRemovePhoto={() => handleRemovePhoto('front')}
         />
 
         <CardPanel
@@ -103,6 +110,7 @@ function HomeScreen({ navigation }: Props) {
           imageUri={backUri}
           onTakePhoto={() => handleTakePhoto('back')}
           onChooseFromGallery={() => handleChooseFromGallery('back')}
+          onRemovePhoto={() => handleRemovePhoto('back')}
         />
 
         <Button
@@ -130,6 +138,7 @@ type CardPanelProps = {
   imageUri?: string;
   onTakePhoto: () => void;
   onChooseFromGallery: () => void;
+  onRemovePhoto: () => void;
 };
 
 function CardPanel({
@@ -138,6 +147,7 @@ function CardPanel({
   imageUri,
   onTakePhoto,
   onChooseFromGallery,
+  onRemovePhoto,
 }: CardPanelProps) {
   const testIdPrefix = label.toLowerCase().startsWith('front') ? 'front' : 'back';
   return (
@@ -147,7 +157,19 @@ function CardPanel({
         <Text style={styles.panelHint}>{hint}</Text>
       </View>
       {imageUri ? (
-        <Image source={{ uri: imageUri }} style={styles.thumbnail} />
+        <View style={styles.thumbnailWrapper}>
+          <Image source={{ uri: imageUri }} style={styles.thumbnail} />
+          <Pressable
+            testID={`${testIdPrefix}-remove-photo`}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove ${label.toLowerCase()} photo`}
+            onPress={onRemovePhoto}
+            hitSlop={space.sm}
+            android_ripple={{ color: colors.dangerMuted, borderless: true }}
+            style={styles.removeButton}>
+            <Text style={styles.removeButtonLabel}>✕</Text>
+          </Pressable>
+        </View>
       ) : (
         <View style={styles.thumbnailPlaceholder}>
           <Text style={styles.thumbnailPlaceholderText}>No photo yet</Text>
@@ -210,12 +232,31 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textMuted,
   },
+  thumbnailWrapper: {
+    marginBottom: space.md,
+  },
   thumbnail: {
     width: '100%',
     aspectRatio: 16 / 10,
     borderRadius: radius.md,
-    marginBottom: space.md,
     backgroundColor: colors.placeholder,
+  },
+  removeButton: {
+    position: 'absolute',
+    top: space.sm,
+    right: space.sm,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(17, 24, 39, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removeButtonLabel: {
+    color: colors.onAccent,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 15,
   },
   thumbnailPlaceholder: {
     width: '100%',

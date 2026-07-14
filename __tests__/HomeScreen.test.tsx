@@ -94,6 +94,46 @@ describe('HomeScreen', () => {
     expect(navigation.navigate).not.toHaveBeenCalled();
   });
 
+  it('removes a captured photo without navigating away, when the remove button is pressed', async () => {
+    mockLaunchCamera.mockImplementation(
+      (_options: unknown, callback: (response: ImagePickerResponse) => void) => {
+        callback({ assets: [{ uri: 'file://front.jpg' }] });
+      },
+    );
+
+    const { navigation } = await renderHomeScreen();
+
+    await fireEvent.press(screen.getByTestId('front-take-photo'));
+    expect(screen.getByTestId('front-remove-photo')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('front-remove-photo'));
+
+    expect(screen.queryByTestId('front-remove-photo')).toBeNull();
+    await fireEvent.press(screen.getByTestId('save-button'));
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it('removing the front photo does not affect an already-captured back photo', async () => {
+    mockLaunchCamera.mockImplementation(
+      (_options: unknown, callback: (response: ImagePickerResponse) => void) => {
+        callback({ assets: [{ uri: 'file://front.jpg' }] });
+      },
+    );
+    mockLaunchImageLibrary.mockImplementation(
+      (_options: unknown, callback: (response: ImagePickerResponse) => void) => {
+        callback({ assets: [{ uri: 'file://back.jpg' }] });
+      },
+    );
+
+    await renderHomeScreen();
+
+    await fireEvent.press(screen.getByTestId('front-take-photo'));
+    await fireEvent.press(screen.getByTestId('back-choose-from-gallery'));
+    await fireEvent.press(screen.getByTestId('front-remove-photo'));
+
+    expect(screen.getByTestId('back-remove-photo')).toBeTruthy();
+  });
+
   it('navigates to History when the view history button is pressed', async () => {
     const { navigation } = await renderHomeScreen();
 
