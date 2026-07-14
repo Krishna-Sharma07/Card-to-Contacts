@@ -10,15 +10,24 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
 import CircleSafePhotoCapture, {
   type CircleSafePhotoCaptureHandle,
 } from '../components/CircleSafePhotoCapture';
+import Button from '../components/Button';
+import Section from '../components/Section';
+import { colors, radius, space, type } from '../theme/theme';
 import { detectDefaultCountryCode } from '../services/detectCountryCode';
 import { recognizeCardText } from '../services/ocr';
 import { extractPhoneCountryCode, parseCardFields } from '../services/parseCardFields';
-import { saveContactFromForm, type ContactForm } from '../services/saveContact';
+import {
+  findExistingContactByPhone,
+  saveContactFromForm,
+  updateContactFromForm,
+  type ContactForm,
+} from '../services/saveContact';
 import { addScanHistoryEntry } from '../services/scanHistory';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Review'>;
@@ -118,6 +127,35 @@ function ReviewScreen({ route, navigation }: Props) {
     setForm(prev => ({ ...prev, phones: prev.phones.filter((_, i) => i !== index) }));
   };
 
+  const finishSave = async (photoUri: string | undefined, existingRecordID?: string) => {
+    setSaving(true);
+    setSaveError(undefined);
+    try {
+      if (existingRecordID) {
+        await updateContactFromForm(existingRecordID, form, photoUri);
+      } else {
+        await saveContactFromForm(form, photoUri);
+      }
+      await addScanHistoryEntry({
+        name: form.name,
+        title: form.title,
+        company: form.company,
+        phones: form.phones,
+        countryCode: form.countryCode,
+        email: form.email,
+        website: form.website,
+        address: form.address,
+        photoUri,
+      });
+      Alert.alert('Saved', `${form.name || 'Contact'} was saved to your contacts.`);
+      navigation.navigate('Home');
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save contact.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setSaveError(undefined);
@@ -136,104 +174,135 @@ function ReviewScreen({ route, navigation }: Props) {
         photoUri = frontUri;
       }
 
-      await saveContactFromForm(form, photoUri);
-      await addScanHistoryEntry({ name: form.name, company: form.company });
-      Alert.alert('Saved', `${form.name || 'Contact'} was saved to your contacts.`);
-      navigation.navigate('Home');
+      const existing = await findExistingContactByPhone(form);
+      if (existing) {
+        setSaving(false);
+        Alert.alert(
+          'Contact already exists',
+          `${existing.displayName || existing.givenName || 'A contact'} already has this phone number. Update that contact, or save this as a new one?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Save as New', onPress: () => finishSave(photoUri) },
+            {
+              text: 'Update Existing',
+              onPress: () => finishSave(photoUri, existing.recordID),
+            },
+          ],
+        );
+        return;
+      }
+
+      await finishSave(photoUri);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save contact.');
-    } finally {
       setSaving(false);
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <CircleSafePhotoCapture ref={photoCaptureRef} uri={frontUri} />
-      <Image source={{ uri: frontUri }} style={styles.thumbnail} />
-      {backUri ? (
-        <Image source={{ uri: backUri }} style={styles.thumbnail} />
-      ) : null}
+    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled">
+        <CircleSafePhotoCapture ref={photoCaptureRef} uri={frontUri} />
 
-      <View style={styles.placeholder}>
+        <View style={styles.photoRow}>
+          <Image source={{ uri: frontUri }} style={styles.thumbnail} />
+          {backUri ? <Image source={{ uri: backUri }} style={styles.thumbnail} /> : null}
+        </View>
+
         {loading ? (
-          <ActivityIndicator />
+          <View style={styles.centeredState}>
+            <ActivityIndicator color={colors.accent} />
+            <Text style={styles.centeredStateText}>Reading the card…</Text>
+          </View>
         ) : error ? (
-          <Text style={styles.errorText}>{error}</Text>
+          <View style={styles.centeredState}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
         ) : (
           <>
-            <FormField
-              testID="name-input"
-              label="Name"
-              value={form.name}
-              onChangeText={updateField('name')}
-            />
-            <FormField
-              testID="title-input"
-              label="Job Title"
-              value={form.title}
-              onChangeText={updateField('title')}
-            />
-            <FormField
-              testID="company-input"
-              label="Company"
-              value={form.company}
-              onChangeText={updateField('company')}
-            />
-            <FormField
-              testID="country-code-input"
-              label="Country Code"
-              value={form.countryCode}
-              onChangeText={updateField('countryCode')}
-              keyboardType="phone-pad"
-            />
-            {form.phones.map((phone, index) => (
-              <View key={index} style={styles.phoneRow}>
-                <View style={styles.phoneInputWrapper}>
-                  <FormField
-                    testID={`phone-input-${index}`}
-                    label={index === 0 ? 'Phone' : `Phone ${index + 1}`}
-                    value={phone}
-                    onChangeText={value => updatePhone(index, value)}
-                    keyboardType="phone-pad"
-                  />
-                </View>
-                {form.phones.length > 1 ? (
-                  <Pressable
-                    testID={`remove-phone-${index}`}
-                    style={styles.removePhoneButton}
-                    onPress={() => removePhone(index)}>
-                    <Text style={styles.removePhoneText}>Remove</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            ))}
-            <Pressable
-              testID="add-phone-button"
-              style={styles.addPhoneButton}
-              onPress={addPhone}>
-              <Text style={styles.addPhoneText}>+ Add another phone number</Text>
-            </Pressable>
+            <Section label="Contact">
+              <FormField
+                testID="name-input"
+                label="Name"
+                value={form.name}
+                onChangeText={updateField('name')}
+              />
+              <FormField
+                testID="title-input"
+                label="Job Title"
+                value={form.title}
+                onChangeText={updateField('title')}
+              />
+              <FormField
+                testID="company-input"
+                label="Company"
+                value={form.company}
+                onChangeText={updateField('company')}
+              />
+            </Section>
 
-            <FormField
-              testID="email-input"
-              label="Email"
-              value={form.email}
-              onChangeText={updateField('email')}
-              keyboardType="email-address"
-            />
-            <FormField
-              testID="website-input"
-              label="Website"
-              value={form.website}
-              onChangeText={updateField('website')}
-            />
-            <FormField
-              testID="address-input"
-              label="Address"
-              value={form.address}
-              onChangeText={updateField('address')}
-            />
+            <Section label="Phone">
+              <FormField
+                testID="country-code-input"
+                label="Country Code"
+                value={form.countryCode}
+                onChangeText={updateField('countryCode')}
+                keyboardType="phone-pad"
+              />
+              {form.phones.map((phone, index) => (
+                <View key={index} style={styles.phoneRow}>
+                  <View style={styles.phoneInputWrapper}>
+                    <FormField
+                      testID={`phone-input-${index}`}
+                      label={index === 0 ? 'Phone' : `Phone ${index + 1}`}
+                      value={phone}
+                      onChangeText={value => updatePhone(index, value)}
+                      keyboardType="phone-pad"
+                    />
+                  </View>
+                  {form.phones.length > 1 ? (
+                    <Pressable
+                      testID={`remove-phone-${index}`}
+                      hitSlop={space.sm}
+                      style={styles.removePhoneButton}
+                      onPress={() => removePhone(index)}>
+                      <Text style={styles.removePhoneText}>Remove</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
+              <Pressable
+                testID="add-phone-button"
+                hitSlop={space.sm}
+                style={styles.addPhoneButton}
+                onPress={addPhone}>
+                <Text style={styles.addPhoneText}>+ Add another phone number</Text>
+              </Pressable>
+            </Section>
+
+            <Section label="Other details">
+              <FormField
+                testID="email-input"
+                label="Email"
+                value={form.email}
+                onChangeText={updateField('email')}
+                keyboardType="email-address"
+              />
+              <FormField
+                testID="website-input"
+                label="Website"
+                value={form.website}
+                onChangeText={updateField('website')}
+              />
+              <FormField
+                testID="address-input"
+                label="Address"
+                value={form.address}
+                onChangeText={updateField('address')}
+              />
+            </Section>
 
             {saveError ? (
               <Text testID="save-error" style={styles.errorText}>
@@ -241,30 +310,26 @@ function ReviewScreen({ route, navigation }: Props) {
               </Text>
             ) : null}
 
-            <Pressable
+            <Button
               testID="save-contact-button"
-              style={[styles.button, saving && styles.buttonDisabled]}
-              disabled={saving}
-              onPress={handleSave}>
-              {saving ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.buttonText}>Save to Contacts</Text>
-              )}
-            </Pressable>
+              label="Save to Contacts"
+              loading={saving}
+              onPress={handleSave}
+              style={styles.saveButton}
+            />
 
-            <Text style={styles.sectionLabel}>Front (raw text)</Text>
-            <Text style={styles.rawText}>{frontText || '(no text found)'}</Text>
+            <Section label="Front (raw text)">
+              <Text style={styles.rawText}>{frontText || '(no text found)'}</Text>
+            </Section>
             {backUri ? (
-              <>
-                <Text style={styles.sectionLabel}>Back (raw text)</Text>
+              <Section label="Back (raw text)">
                 <Text style={styles.rawText}>{backText || '(no text found)'}</Text>
-              </>
+              </Section>
             ) : null}
           </>
         )}
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -277,108 +342,110 @@ type FormFieldProps = {
 };
 
 function FormField({ testID, label, value, onChangeText, keyboardType }: FormFieldProps) {
+  const [focused, setFocused] = useState(false);
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         testID={testID}
-        style={styles.input}
+        style={[styles.input, focused && styles.inputFocused]}
         value={value}
         onChangeText={onChangeText}
         keyboardType={keyboardType ?? 'default'}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   container: {
-    padding: 24,
+    padding: space.xl,
+  },
+  photoRow: {
+    flexDirection: 'row',
+    gap: space.md,
+    marginBottom: space.xl,
   },
   thumbnail: {
-    width: '100%',
+    flex: 1,
     aspectRatio: 16 / 10,
-    borderRadius: 8,
-    marginBottom: 24,
-    backgroundColor: '#E5E7EB',
+    borderRadius: radius.md,
+    backgroundColor: colors.placeholder,
   },
-  placeholder: {
-    padding: 16,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
+  centeredState: {
+    padding: space.xl,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    gap: space.sm,
   },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 4,
+  centeredStateText: {
+    ...type.subtitle,
   },
   rawText: {
-    fontSize: 14,
-    opacity: 0.8,
-    marginBottom: 12,
+    ...type.body,
+    color: colors.textSecondary,
+    lineHeight: 21,
   },
   errorText: {
     fontSize: 14,
-    color: '#C0392B',
+    color: colors.danger,
   },
   field: {
-    marginBottom: 12,
+    marginBottom: space.md,
   },
   phoneRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 8,
+    gap: space.sm,
   },
   phoneInputWrapper: {
     flex: 1,
   },
   removePhoneButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 12,
+    paddingHorizontal: space.sm,
+    paddingVertical: space.sm,
+    marginBottom: space.md,
   },
   removePhoneText: {
-    color: '#C0392B',
+    color: colors.danger,
     fontSize: 13,
     fontWeight: '600',
   },
   addPhoneButton: {
-    marginBottom: 12,
+    alignSelf: 'flex-start',
+    paddingVertical: space.xs,
   },
   addPhoneText: {
-    color: '#2F6FED',
+    color: colors.accent,
     fontSize: 13,
     fontWeight: '600',
   },
   fieldLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 4,
+    ...type.fieldLabel,
+    marginBottom: space.xs,
   },
   input: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 14,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    fontSize: 15,
+    color: colors.textPrimary,
   },
-  button: {
-    backgroundColor: '#2F6FED',
-    paddingVertical: 14,
-    borderRadius: 8,
-    marginTop: 8,
-    marginBottom: 24,
-    alignItems: 'center',
+  inputFocused: {
+    borderColor: colors.accent,
   },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+  saveButton: {
+    marginBottom: space.xxl,
   },
 });
 

@@ -5,6 +5,13 @@ export type ScanHistoryEntry = {
   name: string;
   company: string;
   scannedAt: string;
+  title?: string;
+  phones?: string[];
+  countryCode?: string;
+  email?: string;
+  website?: string;
+  address?: string;
+  photoUri?: string;
 };
 
 const STORAGE_KEY = '@card-to-contacts/scan-history';
@@ -34,4 +41,11 @@ export async function addScanHistoryEntry(
 
 export async function clearScanHistory(): Promise<void> {
   await AsyncStorage.removeItem(STORAGE_KEY);
+}
+
+export async function removeScanHistoryEntry(id: string): Promise<ScanHistoryEntry[]> {
+  const existing = await getScanHistory();
+  const updated = existing.filter(entry => entry.id !== id);
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  return updated;
 }

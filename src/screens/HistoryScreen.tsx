@@ -1,11 +1,22 @@
 import React, { useCallback, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
-import { getScanHistory, type ScanHistoryEntry } from '../services/scanHistory';
+import { colors, radius, space, type } from '../theme/theme';
+import {
+  clearScanHistory,
+  getScanHistory,
+  removeScanHistoryEntry,
+  type ScanHistoryEntry,
+} from '../services/scanHistory';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'History'>;
+
+function Separator() {
+  return <View style={styles.separator} />;
+}
 
 function formatScannedAt(scannedAt: string): string {
   const date = new Date(scannedAt);
@@ -15,7 +26,7 @@ function formatScannedAt(scannedAt: string): string {
   return date.toLocaleString();
 }
 
-function HistoryScreen(_props: Props) {
+function HistoryScreen({ navigation }: Props) {
   const [entries, setEntries] = useState<ScanHistoryEntry[]>([]);
 
   useFocusEffect(
@@ -32,67 +43,148 @@ function HistoryScreen(_props: Props) {
     }, []),
   );
 
+  const handleClearAll = useCallback(() => {
+    Alert.alert('Clear scan history?', 'This removes every saved scan from this list.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear All',
+        style: 'destructive',
+        onPress: async () => {
+          await clearScanHistory();
+          setEntries([]);
+        },
+      },
+    ]);
+  }, []);
+
+  const handleRemove = useCallback((id: string) => {
+    Alert.alert('Remove this scan?', 'This only removes it from your scan history.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          const updated = await removeScanHistoryEntry(id);
+          setEntries(updated);
+        },
+      },
+    ]);
+  }, []);
+
   if (entries.length === 0) {
     return (
-      <View style={styles.emptyContainer}>
-        <Text testID="history-empty" style={styles.emptyText}>
-          No scans yet. Cards you save will show up here.
-        </Text>
-      </View>
+      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+        <View style={styles.emptyContainer}>
+          <Text testID="history-empty" style={styles.emptyText}>
+            No scans yet. Cards you save will show up here.
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <FlatList
-      testID="history-list"
-      contentContainerStyle={styles.list}
-      data={entries}
-      keyExtractor={item => item.id}
-      renderItem={({ item }) => (
-        <View testID={`history-item-${item.id}`} style={styles.item}>
-          <Text style={styles.itemName}>{item.name || 'Unnamed contact'}</Text>
-          {item.company ? <Text style={styles.itemCompany}>{item.company}</Text> : null}
-          <Text style={styles.itemDate}>{formatScannedAt(item.scannedAt)}</Text>
-        </View>
-      )}
-    />
+    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <FlatList
+        testID="history-list"
+        contentContainerStyle={styles.list}
+        data={entries}
+        keyExtractor={item => item.id}
+        ItemSeparatorComponent={Separator}
+        ListHeaderComponent={
+          <Pressable
+            testID="clear-history-button"
+            hitSlop={space.sm}
+            style={styles.clearAllButton}
+            onPress={handleClearAll}>
+            <Text style={styles.clearAllText}>Clear All</Text>
+          </Pressable>
+        }
+        renderItem={({ item }) => (
+          <Pressable
+            testID={`history-item-${item.id}`}
+            style={styles.item}
+            android_ripple={{ color: colors.accentMuted }}
+            onPress={() => navigation.navigate('HistoryDetail', { entry: item })}>
+            <View style={styles.itemHeaderRow}>
+              <Text style={styles.itemName}>{item.name || 'Unnamed contact'}</Text>
+              <Pressable
+                testID={`remove-history-${item.id}`}
+                hitSlop={space.sm}
+                onPress={() => handleRemove(item.id)}>
+                <Text style={styles.removeText}>Remove</Text>
+              </Pressable>
+            </View>
+            {item.company ? <Text style={styles.itemCompany}>{item.company}</Text> : null}
+            <Text style={styles.itemDate}>{formatScannedAt(item.scannedAt)}</Text>
+          </Pressable>
+        )}
+      />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   list: {
-    padding: 16,
+    padding: space.xl,
+  },
+  separator: {
+    height: space.md,
   },
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    padding: space.xl,
   },
   emptyText: {
-    fontSize: 14,
-    opacity: 0.7,
+    ...type.subtitle,
     textAlign: 'center',
   },
   item: {
-    padding: 16,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    marginBottom: 12,
+    padding: space.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  itemHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
   },
   itemName: {
-    fontSize: 16,
+    ...type.body,
     fontWeight: '600',
   },
   itemCompany: {
     fontSize: 14,
-    opacity: 0.8,
-    marginTop: 2,
+    color: colors.textSecondary,
+    marginTop: space.xs / 2,
   },
   itemDate: {
     fontSize: 12,
-    opacity: 0.6,
-    marginTop: 6,
+    color: colors.textMuted,
+    marginTop: space.sm,
+  },
+  removeText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  clearAllButton: {
+    alignSelf: 'flex-end',
+    marginBottom: space.lg,
+    paddingVertical: space.xs,
+  },
+  clearAllText: {
+    color: colors.danger,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
 

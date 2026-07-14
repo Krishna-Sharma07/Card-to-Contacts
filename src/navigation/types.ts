@@ -1,3 +1,5 @@
+import type { ScanHistoryEntry } from '../services/scanHistory';
+
 export type RootStackParamList = {
   Home: undefined;
   Review: {
@@ -5,4 +7,7 @@ export type RootStackParamList = {
     backUri?: string;
   };
   History: undefined;
+  HistoryDetail: {
+    entry: ScanHistoryEntry;
+  };
 };

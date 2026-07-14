@@ -3,7 +3,11 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react-nativ
 import { Alert } from 'react-native';
 import ReviewScreen from '../src/screens/ReviewScreen';
 import { recognizeCardText } from '../src/services/ocr';
-import { saveContactFromForm } from '../src/services/saveContact';
+import {
+  findExistingContactByPhone,
+  saveContactFromForm,
+  updateContactFromForm,
+} from '../src/services/saveContact';
 import { addScanHistoryEntry } from '../src/services/scanHistory';
 
 jest.mock('../src/services/ocr', () => ({
@@ -12,6 +16,8 @@ jest.mock('../src/services/ocr', () => ({
 
 jest.mock('../src/services/saveContact', () => ({
   saveContactFromForm: jest.fn(),
+  updateContactFromForm: jest.fn(),
+  findExistingContactByPhone: jest.fn(),
 }));
 
 jest.mock('../src/services/scanHistory', () => ({
@@ -37,6 +43,8 @@ jest.mock('../src/services/detectCountryCode', () => ({
 
 const mockRecognizeCardText = recognizeCardText as jest.Mock;
 const mockSaveContactFromForm = saveContactFromForm as jest.Mock;
+const mockUpdateContactFromForm = updateContactFromForm as jest.Mock;
+const mockFindExistingContactByPhone = findExistingContactByPhone as jest.Mock;
 const mockAddScanHistoryEntry = addScanHistoryEntry as jest.Mock;
 
 async function renderReviewScreen(backUri?: string) {
@@ -54,6 +62,9 @@ describe('ReviewScreen', () => {
   beforeEach(() => {
     mockRecognizeCardText.mockReset();
     mockSaveContactFromForm.mockReset();
+    mockUpdateContactFromForm.mockReset();
+    mockFindExistingContactByPhone.mockReset();
+    mockFindExistingContactByPhone.mockResolvedValue(null);
     mockAddScanHistoryEntry.mockReset();
     mockCapture.mockReset();
     mockCapture.mockResolvedValue('file:///padded-photo.jpg');
@@ -275,10 +286,109 @@ describe('ReviewScreen', () => {
       expect.objectContaining({ name: 'Jane Doe', company: 'Acme Inc.' }),
       'file:///padded-photo.jpg',
     );
-    expect(mockAddScanHistoryEntry).toHaveBeenCalledWith({
-      name: 'Jane Doe',
-      company: 'Acme Inc.',
+    expect(mockAddScanHistoryEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Jane Doe',
+        company: 'Acme Inc.',
+        photoUri: 'file:///padded-photo.jpg',
+      }),
+    );
+  });
+
+  it('offers to update an existing contact when one already has this phone number', async () => {
+    mockRecognizeCardText.mockResolvedValueOnce({
+      frontText: ['Jane Doe', '555-123-4567'].join('\n'),
+      backText: undefined,
     });
+    mockFindExistingContactByPhone.mockResolvedValueOnce({
+      recordID: '99',
+      displayName: 'Jane Doe',
+    });
+    mockUpdateContactFromForm.mockResolvedValueOnce(undefined);
+    mockAddScanHistoryEntry.mockResolvedValueOnce([]);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _msg, buttons) => {
+      const updateButton = buttons?.find(button => button.text === 'Update Existing');
+      updateButton?.onPress?.();
+    });
+
+    const { navigation } = await renderReviewScreen();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('name-input').props.value).toBe('Jane Doe');
+    });
+
+    await fireEvent.press(screen.getByTestId('save-contact-button'));
+
+    await waitFor(() => {
+      expect(mockUpdateContactFromForm).toHaveBeenCalledWith(
+        '99',
+        expect.objectContaining({ name: 'Jane Doe' }),
+        'file:///padded-photo.jpg',
+      );
+    });
+    expect(mockSaveContactFromForm).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(navigation.navigate).toHaveBeenCalledWith('Home');
+    });
+    alertSpy.mockRestore();
+  });
+
+  it('saves as a new contact when the user dismisses the duplicate prompt that way', async () => {
+    mockRecognizeCardText.mockResolvedValueOnce({
+      frontText: ['Jane Doe', '555-123-4567'].join('\n'),
+      backText: undefined,
+    });
+    mockFindExistingContactByPhone.mockResolvedValueOnce({
+      recordID: '99',
+      displayName: 'Jane Doe',
+    });
+    mockSaveContactFromForm.mockResolvedValueOnce({ recordID: '1' });
+    mockAddScanHistoryEntry.mockResolvedValueOnce([]);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _msg, buttons) => {
+      const saveAsNewButton = buttons?.find(button => button.text === 'Save as New');
+      saveAsNewButton?.onPress?.();
+    });
+
+    await renderReviewScreen();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('name-input').props.value).toBe('Jane Doe');
+    });
+
+    await fireEvent.press(screen.getByTestId('save-contact-button'));
+
+    await waitFor(() => {
+      expect(mockSaveContactFromForm).toHaveBeenCalled();
+    });
+    expect(mockUpdateContactFromForm).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it('does not save anything when the user cancels the duplicate prompt', async () => {
+    mockRecognizeCardText.mockResolvedValueOnce({
+      frontText: ['Jane Doe', '555-123-4567'].join('\n'),
+      backText: undefined,
+    });
+    mockFindExistingContactByPhone.mockResolvedValueOnce({
+      recordID: '99',
+      displayName: 'Jane Doe',
+    });
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+
+    await renderReviewScreen();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('name-input').props.value).toBe('Jane Doe');
+    });
+
+    await fireEvent.press(screen.getByTestId('save-contact-button'));
+
+    await waitFor(() => {
+      expect(mockFindExistingContactByPhone).toHaveBeenCalled();
+    });
+    expect(mockSaveContactFromForm).not.toHaveBeenCalled();
+    expect(mockUpdateContactFromForm).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
   });
 
   it('falls back to the raw photo when padding the card onto a square canvas fails', async () => {

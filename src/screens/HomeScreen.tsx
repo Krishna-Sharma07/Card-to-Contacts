@@ -3,16 +3,18 @@ import {
   Alert,
   Image,
   PermissionsAndroid,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import type { ImagePickerResponse } from 'react-native-image-picker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
+import Button from '../components/Button';
+import { colors, radius, space, type } from '../theme/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 type Side = 'front' | 'back';
@@ -76,46 +78,55 @@ function HomeScreen({ navigation }: Props) {
   }, [navigation, frontUri, backUri]);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Card to Contacts</Text>
-      <Text style={styles.subtitle}>
-        Scan a business card and save it straight to your contacts.
-      </Text>
+    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled">
+        <View style={styles.header}>
+          <Text style={styles.title}>Card to Contacts</Text>
+          <Text style={styles.subtitle}>
+            Scan a business card and save it straight to your contacts.
+          </Text>
+        </View>
 
-      <CardPanel
-        label="Front"
-        imageUri={frontUri}
-        onTakePhoto={() => handleTakePhoto('front')}
-        onChooseFromGallery={() => handleChooseFromGallery('front')}
-      />
+        <CardPanel
+          label="Front"
+          hint="Required"
+          imageUri={frontUri}
+          onTakePhoto={() => handleTakePhoto('front')}
+          onChooseFromGallery={() => handleChooseFromGallery('front')}
+        />
 
-      <CardPanel
-        label="Back (optional)"
-        imageUri={backUri}
-        onTakePhoto={() => handleTakePhoto('back')}
-        onChooseFromGallery={() => handleChooseFromGallery('back')}
-      />
+        <CardPanel
+          label="Back"
+          hint="Optional"
+          imageUri={backUri}
+          onTakePhoto={() => handleTakePhoto('back')}
+          onChooseFromGallery={() => handleChooseFromGallery('back')}
+        />
 
-      <Pressable
-        testID="save-button"
-        style={[styles.button, !frontUri && styles.buttonDisabled]}
-        disabled={!frontUri}
-        onPress={handleSave}>
-        <Text style={styles.buttonText}>Save</Text>
-      </Pressable>
+        <Button
+          testID="save-button"
+          label="Save"
+          disabled={!frontUri}
+          onPress={handleSave}
+          style={styles.saveButton}
+        />
 
-      <Pressable
-        testID="view-history-button"
-        style={[styles.button, styles.secondaryButton]}
-        onPress={() => navigation.navigate('History')}>
-        <Text style={styles.buttonText}>View Scan History</Text>
-      </Pressable>
-    </ScrollView>
+        <Button
+          testID="view-history-button"
+          label="View Scan History"
+          variant="ghost"
+          onPress={() => navigation.navigate('History')}
+        />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 type CardPanelProps = {
   label: string;
+  hint: string;
   imageUri?: string;
   onTakePhoto: () => void;
   onChooseFromGallery: () => void;
@@ -123,6 +134,7 @@ type CardPanelProps = {
 
 function CardPanel({
   label,
+  hint,
   imageUri,
   onTakePhoto,
   onChooseFromGallery,
@@ -130,99 +142,107 @@ function CardPanel({
   const testIdPrefix = label.toLowerCase().startsWith('front') ? 'front' : 'back';
   return (
     <View style={styles.panel}>
-      <Text style={styles.panelLabel}>{label}</Text>
+      <View style={styles.panelHeaderRow}>
+        <Text style={styles.panelLabel}>{label}</Text>
+        <Text style={styles.panelHint}>{hint}</Text>
+      </View>
       {imageUri ? (
         <Image source={{ uri: imageUri }} style={styles.thumbnail} />
       ) : (
-        <View style={styles.thumbnailPlaceholder} />
+        <View style={styles.thumbnailPlaceholder}>
+          <Text style={styles.thumbnailPlaceholderText}>No photo yet</Text>
+        </View>
       )}
       <View style={styles.panelButtons}>
-        <Pressable
+        <Button
           testID={`${testIdPrefix}-take-photo`}
-          style={[styles.smallButton, styles.secondaryButton]}
-          onPress={onTakePhoto}>
-          <Text style={styles.buttonText}>Take Photo</Text>
-        </Pressable>
-        <Pressable
+          label="Take Photo"
+          variant="outline"
+          onPress={onTakePhoto}
+          style={styles.panelButton}
+        />
+        <Button
           testID={`${testIdPrefix}-choose-from-gallery`}
-          style={[styles.smallButton, styles.secondaryButton]}
-          onPress={onChooseFromGallery}>
-          <Text style={styles.buttonText}>Choose from Gallery</Text>
-        </Pressable>
+          label="Choose from Gallery"
+          variant="outline"
+          onPress={onChooseFromGallery}
+          style={styles.panelButton}
+        />
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   container: {
     flexGrow: 1,
-    alignItems: 'center',
-    padding: 24,
+    padding: space.xl,
+  },
+  header: {
+    marginBottom: space.xl,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 8,
-    textAlign: 'center',
+    ...type.title,
+    marginBottom: space.xs,
   },
   subtitle: {
-    fontSize: 14,
-    opacity: 0.7,
-    marginBottom: 24,
-    textAlign: 'center',
+    ...type.subtitle,
   },
   panel: {
-    width: '100%',
-    marginBottom: 20,
+    marginBottom: space.xl,
+  },
+  panelHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: space.sm,
   },
   panelLabel: {
-    fontSize: 14,
+    ...type.body,
     fontWeight: '600',
-    marginBottom: 8,
+  },
+  panelHint: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textMuted,
   },
   thumbnail: {
     width: '100%',
     aspectRatio: 16 / 10,
-    borderRadius: 8,
-    marginBottom: 12,
-    backgroundColor: '#E5E7EB',
+    borderRadius: radius.md,
+    marginBottom: space.md,
+    backgroundColor: colors.placeholder,
   },
   thumbnailPlaceholder: {
     width: '100%',
     aspectRatio: 16 / 10,
-    borderRadius: 8,
-    marginBottom: 12,
-    backgroundColor: '#F3F4F6',
+    borderRadius: radius.md,
+    marginBottom: space.md,
+    backgroundColor: colors.placeholder,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbnailPlaceholderText: {
+    fontSize: 13,
+    color: colors.textMuted,
   },
   panelButtons: {
     flexDirection: 'row',
-    gap: 12,
+    gap: space.md,
   },
-  smallButton: {
+  panelButton: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
   },
-  button: {
-    backgroundColor: '#2F6FED',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    width: '100%',
-    marginTop: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  secondaryButton: {
-    backgroundColor: '#5A5F66',
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
+  saveButton: {
+    marginTop: space.sm,
+    marginBottom: space.lg,
   },
 });
 
